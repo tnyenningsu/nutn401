@@ -1,0 +1,391 @@
+
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport"
+ content="width=device-width,initial-scale=1,viewport-fit=cover">
+
+<title>荷花AR｜水位觀察</title>
+
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+<style>
+*{box-sizing:border-box}
+
+html,body{
+  margin:0;
+  height:100%;
+  font:15px/1.5 system-ui,
+    "Noto Sans TC",sans-serif;
+  background:#10251e;
+  color:white;
+}
+
+a-scene{
+  position:fixed!important;
+  inset:0!important;
+}
+
+#top,#bottom{
+  position:fixed;
+  z-index:20;
+  left:10px;
+  right:10px;
+  max-width:540px;
+  margin:auto;
+  background:#0c312cdd;
+  border:1px solid #518979;
+  border-radius:14px;
+  padding:12px;
+}
+
+#top{top:10px}
+#bottom{bottom:10px}
+
+h1{margin:0;font-size:18px}
+p{margin:5px 0;font-size:13px}
+
+button{
+  border:0;
+  border-radius:8px;
+  background:#c6f1d6;
+  color:#13452f;
+  padding:9px 11px;
+  font-weight:800;
+  cursor:pointer;
+}
+
+button:disabled{opacity:.5}
+
+input[type=range]{
+  width:100%;
+  accent-color:#98edb6;
+}
+
+.buttons{
+  display:flex;
+  justify-content:space-between;
+  gap:5px;
+}
+
+.buttons button{flex:1}
+
+#bottom[hidden]{display:none}
+#state{color:#fae7a2}
+</style>
+</head>
+
+<body>
+
+<div id="top">
+  <h1>🌸 荷花 AR 水位實驗</h1>
+
+  <p id="state">
+    請點「啟動相機」，
+    對準老師印出的荷花圖卡。
+  </p>
+
+  <button id="start">
+    啟動相機與辨識
+  </button>
+
+  <p>
+    相機若無法啟動，
+    請用手機 Chrome 或 Safari
+    直接開啟 HTTPS 網址。
+  </p>
+</div>
+
+<div id="bottom" hidden>
+
+  <div style="display:flex;justify-content:space-between">
+    <strong>調整水位</strong>
+    <strong id="waterText">1.72 m</strong>
+  </div>
+
+  <input
+    id="waterRange"
+    aria-label="水位高度"
+    type="range"
+    min="0.60"
+    max="2.65"
+    step="0.01"
+    value="1.72">
+
+  <div class="buttons">
+    <button data-water="0.65">
+      低 0.65m
+    </button>
+
+    <button data-water="1.72">
+      中 1.72m
+    </button>
+
+    <button data-water="2.60">
+      高 2.60m
+    </button>
+  </div>
+
+  <p>
+    觀察立葉、浮葉、葉柄和花梗
+    相對水面的位置。
+    水位改變不等於植物瞬間生長。
+  </p>
+</div>
+
+<a-scene
+  id="scene"
+  mindar-image="
+    imageTargetSrc: ./targets.mind;
+    autoStart: false;
+    uiLoading: yes;
+    uiScanning: yes;
+    uiError: yes"
+  embedded
+  renderer="
+    colorManagement: true;
+    alpha: true;
+    antialias: true"
+  vr-mode-ui="enabled:false"
+  device-orientation-permission-ui="enabled:false">
+
+  <a-assets timeout="45000">
+    <a-asset-item
+      id="glb"
+      src="./plant.glb">
+    </a-asset-item>
+  </a-assets>
+
+  <a-camera
+    position="0 0 0"
+    look-controls="enabled:false">
+  </a-camera>
+
+  <a-entity
+    id="target"
+    mindar-image-target="targetIndex: 0">
+
+    <a-entity
+      id="rig"
+      position="0 0 0.02"
+      rotation="90 0 0"
+      scale="0.17 0.17 0.17">
+
+      <a-gltf-model
+        id="plant"
+        src="#glb">
+      </a-gltf-model>
+
+    </a-entity>
+  </a-entity>
+</a-scene>
+
+<script>
+const $ = id =>
+  document.getElementById(id);
+
+const THREE = AFRAME.THREE;
+
+let water = null;
+let activeLevel = 1.72;
+let ready = false;
+let found = false;
+
+const BASE = 0.48;
+const WIDTH = 4.26;
+const DEPTH = 3.06;
+
+function info(t){
+  $('state').textContent = t;
+}
+
+function updateWater(v){
+
+  activeLevel = Math.max(
+    .60,
+    Math.min(2.65,Number(v))
+  );
+
+  $('waterRange').value = activeLevel;
+
+  $('waterText').textContent =
+    activeLevel.toFixed(2) + ' m';
+
+  if(water){
+
+    const height = Math.max(
+      .03,
+      activeLevel - BASE
+    );
+
+    water.scale.set(1,height,1);
+
+    water.position.set(
+      0,
+      (activeLevel + BASE)/2,
+      0
+    );
+  }
+}
+
+$('waterRange').addEventListener(
+  'input',
+  e => updateWater(e.target.value)
+);
+
+document
+  .querySelectorAll('[data-water]')
+  .forEach(b=>{
+
+    b.addEventListener('click',()=>{
+      updateWater(b.dataset.water);
+    });
+
+  });
+
+$('plant').addEventListener(
+  'model-loaded',
+  ()=>{
+
+    ready = true;
+
+    const mesh =
+      $('plant').getObject3D('mesh');
+
+    // 隱藏GLB原本的固定水面
+    if(mesh){
+
+      mesh.traverse(n=>{
+
+        if(
+          n.isMesh &&
+          /water volume|water surface|water_volume|water_surface/i.test(n.name)
+        ){
+          n.visible = false;
+        }
+
+      });
+    }
+
+    // 建立可調整高度的透明水體
+    const mat =
+      new THREE.MeshPhongMaterial({
+        color:0x53b9ce,
+        transparent:true,
+        opacity:0.30,
+        side:THREE.DoubleSide,
+        depthWrite:false
+      });
+
+    water = new THREE.Mesh(
+      new THREE.BoxGeometry(
+        WIDTH,1,DEPTH
+      ),
+      mat
+    );
+
+    water.name = '動態水位';
+
+    $('rig').object3D.add(water);
+
+    updateWater(activeLevel);
+
+    info(
+      found
+      ? '辨識成功！請觀察並調整水位。'
+      : '模型準備完成，請將相機對準荷花圖卡。'
+    );
+  }
+);
+
+$('plant').addEventListener(
+  'model-error',
+  ()=>{
+    info(
+      'GLB載入失敗：請檢查 plant.glb 的路徑與格式。'
+    );
+  }
+);
+
+$('target').addEventListener(
+  'targetFound',
+  ()=>{
+
+    found = true;
+
+    $('bottom').hidden = false;
+
+    info(
+      ready
+      ? '辨識成功！請調整水位。'
+      : '辨識成功，正在載入模型…'
+    );
+  }
+);
+
+$('target').addEventListener(
+  'targetLost',
+  ()=>{
+
+    found = false;
+
+    $('bottom').hidden = true;
+
+    info(
+      '圖卡離開鏡頭，請重新對準同一張圖卡。'
+    );
+  }
+);
+
+$('start').addEventListener(
+  'click',
+  async()=>{
+
+    const btn = $('start');
+    btn.disabled = true;
+
+    info(
+      '正在啟動相機，請允許相機權限…'
+    );
+
+    try {
+
+      const scene = $('scene');
+
+      if(!scene.hasLoaded){
+
+        await new Promise(ok=>
+          scene.addEventListener(
+            'loaded',
+            ok,
+            {once:true}
+          )
+        );
+      }
+
+      await scene.systems[
+        'mindar-image-system'
+      ].start();
+
+      btn.hidden = true;
+
+      info(
+        '相機已啟動，請將圖卡置於鏡頭中央。'
+      );
+
+    }catch(e){
+
+      btn.disabled = false;
+
+      info(
+        '無法啟動相機：' +
+        (e.message || String(e))
+      );
+    }
+  }
+);
+</script>
+</body>
+</html>
